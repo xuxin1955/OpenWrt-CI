@@ -1,0 +1,196 @@
+name: OpenWrt Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_repo:
+        description: '源码仓库'
+        required: true
+        default: 'openwrt/openwrt'
+        type: string
+      source_branch:
+        description: '源码分支'
+        required: true
+        default: 'main'
+        type: string
+      custom_feeds:
+        description: '自定义软件源（src-git luci https://github.com/openwrt/luci.git）'
+        required: false
+        default: ''
+        type: string
+      target:
+        description: '目标架构'
+        required: true
+        default: 'airoha'
+        type: string
+      subtarget:
+        description: '芯片系列'
+        required: true
+        default: 'an7581'
+        type: string
+      profile:
+        description: '设备配置'
+        required: true
+        default: 'nokia_xg-040g-md'
+        type: string
+      packages:
+        description: '定制软件（英文逗号分隔）'
+        required: false
+        default: 'luci-theme-argon,luci-app-diskman,luci-app-usb-printer,tailscale,luci-app-wol,luci-app-pbr,luci-app-ttyd,luci-app-adblock'
+        type: string
+
+jobs:
+  build-firmware:
+    name: 构建 ${{ github.event.inputs.profile }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: write
+
+    steps:
+    - name: 初始化环境
+      run: |
+        echo "BUILD_TIME=$(date +%Y%m%d%H%M%S)" >> $GITHUB_ENV
+        echo "TARGET=${{ github.event.inputs.target }}" >> $GITHUB_ENV
+        echo "SUBTARGET=${{ github.event.inputs.subtarget }}" >> $GITHUB_ENV
+        echo "PROFILE=${{ github.event.inputs.profile }}" >> $GITHUB_ENV
+        sudo mkdir -p /mnt/openwrt
+        sudo chown -R runner:runner /mnt/openwrt
+
+    - name: 检出源码
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ github.event.inputs.source_repo }}
+        ref: ${{ github.event.inputs.source_branch }}
+        path: /mnt/openwrt/openwrt-src
+
+    - name: 添加自定义软件源
+      if: github.event.inputs.custom_feeds != ''
+      run: |
+        cd /mnt/openwrt/openwrt-src
+        echo "${{ github.event.inputs.custom_feeds }}" | sed '/^$/d' >> feeds.conf.default
+
+    - name: 安装编译工具
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libncurses5-dev libssl-dev zlib1g-dev git wget python3 python3-pip python3-setuptools rsync subversion unzip flex bison gettext libelf-dev libtool automake autoconf pkg-config gawk
+
+    - name: 更新feeds
+      run: |
+        cd /mnt/openwrt/openwrt-src
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+    - name: 生成配置
+      run: |
+        cd /mnt/openwrt/openwrt-src
+        set -e
+        
+        TEMP_PREFIX="/tmp/op_build_$(date +%s)_$$"
+        > ${TEMP_PREFIX}_available.txt
+        > ${TEMP_PREFIX}_missing.txt
+        > ${TEMP_PREFIX}_added.txt
+        > ${TEMP_PREFIX}_failed.txt
+        
+        if [ -n "${{ github.event.inputs.packages }}" ]; then
+          CLEANED_PACKAGES=$(echo "${{ github.event.inputs.packages }}" | tr -d '[:space:]' | sed 's/,$//')
+          
+          echo "$CLEANED_PACKAGES" | tr ',' '\n' | while read -r pkg; do
+            [ -z "$pkg" ] && continue
+            
+            if ./scripts/feeds list | grep -q "^$pkg\s"; then
+              echo "$pkg" >> ${TEMP_PREFIX}_available.txt
+              
+              if ./scripts/feeds install "$pkg" 2>&1; then
+                echo "$pkg" >> ${TEMP_PREFIX}_added.txt
+                echo "✓ $pkg"
+                
+                if [[ "$pkg" == luci-app-* ]]; then
+                  app_name="${pkg#luci-app-}"
+                  zh_cn_pkg="luci-i18n-${app_name}-zh-cn"
+                  
+                  if ./scripts/feeds list | grep -q "^$zh_cn_pkg\s"; then
+                    if ./scripts/feeds install "$zh_cn_pkg" 2>&1; then
+                      echo "$zh_cn_pkg" >> ${TEMP_PREFIX}_added.txt
+                      echo "  +$zh_cn_pkg"
+                    else
+                      echo "  !$zh_cn_pkg (安装失败)"
+                      echo "$zh_cn_pkg" >> ${TEMP_PREFIX}_failed.txt
+                    fi
+                  fi
+                fi
+              else
+                echo "$pkg" >> ${TEMP_PREFIX}_failed.txt
+                echo "✗ $pkg (安装失败)"
+              fi
+            else
+              echo "$pkg" >> ${TEMP_PREFIX}_missing.txt
+              echo "✗ $pkg (无源码)"
+            fi
+          done
+          
+          if [ -s ${TEMP_PREFIX}_added.txt ]; then
+            echo "已安装: $(cat ${TEMP_PREFIX}_added.txt | tr '\n' ' ')"
+          fi
+          
+          if [ -s ${TEMP_PREFIX}_missing.txt ]; then
+            echo "未安装(无源码): $(cat ${TEMP_PREFIX}_missing.txt | tr '\n' ' ')"
+          fi
+          
+          if [ -s ${TEMP_PREFIX}_failed.txt ]; then
+            echo "安装失败: $(cat ${TEMP_PREFIX}_failed.txt | tr '\n' ' ')"
+          fi
+        fi
+        
+        > .config
+        echo "CONFIG_TARGET_${TARGET}=y" >> .config
+        echo "CONFIG_TARGET_${TARGET}_${SUBTARGET}=y" >> .config
+        echo "CONFIG_TARGET_${TARGET}_${SUBTARGET}_DEVICE_${PROFILE}=y" >> .config
+        
+        if [ -f ${TEMP_PREFIX}_added.txt ]; then
+          while read -r pkg; do
+            echo "CONFIG_PACKAGE_${pkg}=y" >> .config
+          done < ${TEMP_PREFIX}_added.txt
+        fi
+        
+        make defconfig
+        
+        rm -f ${TEMP_PREFIX}_available.txt ${TEMP_PREFIX}_missing.txt ${TEMP_PREFIX}_added.txt ${TEMP_PREFIX}_failed.txt 2>/dev/null || true
+
+    - name: 编译固件
+      run: |
+        cd /mnt/openwrt/openwrt-src
+        set -e
+        make download -j$(nproc)
+        make -j$(nproc) V=sc || make -j1 V=s
+
+    - name: 准备发布文件
+      if: success()
+      run: |
+        mkdir -p ${{ github.workspace }}/release_assets
+        cp -r /mnt/openwrt/openwrt-src/bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/* ${{ github.workspace }}/release_assets/
+
+    - name: 上传固件
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: openwrt-${{ env.PROFILE }}-${{ env.BUILD_TIME }}
+        path: ${{ github.workspace }}/release_assets/
+        retention-days: 7
+
+    - name: 创建发布
+      if: success()
+      uses: softprops/action-gh-release@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: openwrt-${{ env.PROFILE }}-${{ env.BUILD_TIME }}
+        name: OpenWrt ${{ env.PROFILE }} ${{ env.BUILD_TIME }}
+        body: |
+          设备: ${{ env.PROFILE }}
+          架构: ${{ env.TARGET }}/${{ env.SUBTARGET }}
+          定制软件: ${{ github.event.inputs.packages }}
+        files: ${{ github.workspace }}/release_assets/*
+        draft: false
+        prerelease: false
+        overwrite_files: true
