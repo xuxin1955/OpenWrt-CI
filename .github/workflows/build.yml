@@ -4,32 +4,32 @@ on:
   workflow_dispatch:
     inputs:
       source_repo:
-        description: '源码仓库'
+        description: '仓库'
         required: true
         default: 'openwrt/openwrt'
         type: string
       source_branch:
-        description: '源码分支'
+        description: '分支'
         required: true
         default: 'main'
         type: string
       custom_feeds:
-        description: '自定义软件源（src-git luci https://github.com/openwrt/luci.git）'
+        description: '软件源（src-git luci https://github.com/openwrt/luci.git）'
         required: false
         default: ''
         type: string
       target:
-        description: '目标架构'
+        description: '架构'
         required: true
         default: 'airoha'
         type: string
       subtarget:
-        description: '芯片系列'
+        description: '芯片'
         required: true
         default: 'an7581'
         type: string
       profile:
-        description: '设备配置'
+        description: '配置'
         required: true
         default: 'nokia_xg-040g-md'
         type: string
@@ -62,9 +62,13 @@ jobs:
       with:
         repository: ${{ github.event.inputs.source_repo }}
         ref: ${{ github.event.inputs.source_branch }}
-        path: /mnt/openwrt/openwrt-src
 
-    - name: 添加自定义软件源
+    - name: 移动源码
+      run: |
+        mv ${{ github.workspace }} /mnt/openwrt/openwrt-src
+        ln -sfn /mnt/openwrt/openwrt-src ${{ github.workspace }}
+
+    - name: 自定义软件源
       if: github.event.inputs.custom_feeds != ''
       run: |
         cd /mnt/openwrt/openwrt-src
@@ -146,6 +150,7 @@ jobs:
         echo "CONFIG_TARGET_${TARGET}=y" >> .config
         echo "CONFIG_TARGET_${TARGET}_${SUBTARGET}=y" >> .config
         echo "CONFIG_TARGET_${TARGET}_${SUBTARGET}_DEVICE_${PROFILE}=y" >> .config
+        echo "# CONFIG_FEED_video is not set" >> .config
         
         if [ -f ${TEMP_PREFIX}_added.txt ]; then
           while read -r pkg; do
@@ -176,7 +181,7 @@ jobs:
       with:
         name: openwrt-${{ env.PROFILE }}-${{ env.BUILD_TIME }}
         path: ${{ github.workspace }}/release_assets/
-        retention-days: 7
+        retention-days: 1
 
     - name: 创建发布
       if: success()
