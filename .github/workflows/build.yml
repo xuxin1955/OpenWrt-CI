@@ -95,8 +95,6 @@ jobs:
         echo "CONFIG_TARGET_${TARGET}_${SUBTARGET}_DEVICE_${PROFILE}=y" >> .config
         echo "# CONFIG_FEED_video is not set" >> .config
         
-        INSTALLED_PACKAGES=""
-        
         if [ -n "${{ github.event.inputs.packages }}" ]; then
           CLEANED_PACKAGES=$(echo "${{ github.event.inputs.packages }}" | tr -d '[:space:]' | sed 's/,$//')
           
@@ -106,25 +104,27 @@ jobs:
             
             if ./scripts/feeds install "$pkg" 2>&1; then
               echo "CONFIG_PACKAGE_${pkg}=y" >> .config
-              INSTALLED_PACKAGES="${INSTALLED_PACKAGES}${pkg},"
               
               if [[ "$pkg" == luci-app-* ]]; then
                 app_name="${pkg#luci-app-}"
                 zh_cn_pkg="luci-i18n-${app_name}-zh-cn"
                 if ./scripts/feeds install "$zh_cn_pkg" 2>&1; then
                   echo "CONFIG_PACKAGE_${zh_cn_pkg}=y" >> .config
-                  INSTALLED_PACKAGES="${INSTALLED_PACKAGES}${zh_cn_pkg},"
                 fi
               fi
             fi
           done
           unset IFS
-          
-          INSTALLED_PACKAGES=${INSTALLED_PACKAGES%,}
-          echo "INSTALLED_PACKAGES=${INSTALLED_PACKAGES}" >> $GITHUB_ENV
         fi
         
         make defconfig
+        
+        echo "=== 配置差异 (diffconfig) ==="
+        ./scripts/diffconfig.sh
+        
+        echo ""
+        echo "=== 所有已选中的软件包列表 ==="
+        grep '^CONFIG_PACKAGE_.*=y' .config | sed 's/^CONFIG_PACKAGE_//;s/=y$//' | sort
 
     - name: 编译固件
       run: |
