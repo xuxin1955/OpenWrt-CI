@@ -36,7 +36,7 @@ on:
       packages:
         description: '定制软件（英文逗号分隔）'
         required: false
-        default: 'luci-theme-argon,luci-app-diskman,luci-app-usb-printer,tailscale,luci-app-wol,luci-app-pbr,luci-app-ttyd,luci-app-adblock'
+        default: 'luci-theme-argon,luci-app-diskman,luci-app-usb-printer,tailscale,luci,luci-app-wol,luci-app-pbr,luci-app-ttyd,luci-app-adblock'
         type: string
 
 jobs:
@@ -90,77 +90,41 @@ jobs:
         cd /mnt/openwrt/openwrt-src
         set -e
         
-        TEMP_PREFIX="/tmp/op_build_$(date +%s)_$$"
-        > ${TEMP_PREFIX}_available.txt
-        > ${TEMP_PREFIX}_missing.txt
-        > ${TEMP_PREFIX}_added.txt
-        > ${TEMP_PREFIX}_failed.txt
-        
-        if [ -n "${{ github.event.inputs.packages }}" ]; then
-          CLEANED_PACKAGES=$(echo "${{ github.event.inputs.packages }}" | tr -d '[:space:]' | sed 's/,$//')
-          
-          echo "$CLEANED_PACKAGES" | tr ',' '\n' | while read -r pkg; do
-            [ -z "$pkg" ] && continue
-            
-            if ./scripts/feeds list | grep -q "^$pkg\s"; then
-              echo "$pkg" >> ${TEMP_PREFIX}_available.txt
-              
-              if ./scripts/feeds install "$pkg" 2>&1; then
-                echo "$pkg" >> ${TEMP_PREFIX}_added.txt
-                echo "✓ $pkg"
-                
-                if [[ "$pkg" == luci-app-* ]]; then
-                  app_name="${pkg#luci-app-}"
-                  zh_cn_pkg="luci-i18n-${app_name}-zh-cn"
-                  
-                  if ./scripts/feeds list | grep -q "^$zh_cn_pkg\s"; then
-                    if ./scripts/feeds install "$zh_cn_pkg" 2>&1; then
-                      echo "$zh_cn_pkg" >> ${TEMP_PREFIX}_added.txt
-                      echo "  +$zh_cn_pkg"
-                    else
-                      echo "  !$zh_cn_pkg (安装失败)"
-                      echo "$zh_cn_pkg" >> ${TEMP_PREFIX}_failed.txt
-                    fi
-                  fi
-                fi
-              else
-                echo "$pkg" >> ${TEMP_PREFIX}_failed.txt
-                echo "✗ $pkg (安装失败)"
-              fi
-            else
-              echo "$pkg" >> ${TEMP_PREFIX}_missing.txt
-              echo "✗ $pkg (无源码)"
-            fi
-          done
-          
-          if [ -s ${TEMP_PREFIX}_added.txt ]; then
-            echo "已安装: $(cat ${TEMP_PREFIX}_added.txt | tr '\n' ' ')"
-          fi
-          
-          if [ -s ${TEMP_PREFIX}_missing.txt ]; then
-            echo "未安装(无源码): $(cat ${TEMP_PREFIX}_missing.txt | tr '\n' ' ')"
-          fi
-          
-          if [ -s ${TEMP_PREFIX}_failed.txt ]; then
-            echo "安装失败: $(cat ${TEMP_PREFIX}_failed.txt | tr '\n' ' ')"
-          fi
-        fi
-        
-        > .config
         echo "CONFIG_TARGET_${TARGET}=y" >> .config
         echo "CONFIG_TARGET_${TARGET}_${SUBTARGET}=y" >> .config
         echo "CONFIG_TARGET_${TARGET}_${SUBTARGET}_DEVICE_${PROFILE}=y" >> .config
         echo "# CONFIG_FEED_video is not set" >> .config
         
-        if [ -f ${TEMP_PREFIX}_added.txt ]; then
-          while read -r pkg; do
-            echo "CONFIG_PACKAGE_${pkg}=y" >> .config
-          done < ${TEMP_PREFIX}_added.txt
+        INSTALLED_PACKAGES=""
+        
+        if [ -n "${{ github.event.inputs.packages }}" ]; then
+          CLEANED_PACKAGES=$(echo "${{ github.event.inputs.packages }}" | tr -d '[:space:]' | sed 's/,$//')
+          
+          IFS=','
+          for pkg in $CLEANED_PACKAGES; do
+            [ -z "$pkg" ] && continue
+            
+            if ./scripts/feeds install "$pkg" 2>&1; then
+              echo "CONFIG_PACKAGE_${pkg}=y" >> .config
+              INSTALLED_PACKAGES="${INSTALLED_PACKAGES}${pkg},"
+              
+              if [[ "$pkg" == luci-app-* ]]; then
+                app_name="${pkg#luci-app-}"
+                zh_cn_pkg="luci-i18n-${app_name}-zh-cn"
+                if ./scripts/feeds install "$zh_cn_pkg" 2>&1; then
+                  echo "CONFIG_PACKAGE_${zh_cn_pkg}=y" >> .config
+                  INSTALLED_PACKAGES="${INSTALLED_PACKAGES}${zh_cn_pkg},"
+                fi
+              fi
+            fi
+          done
+          unset IFS
+          
+          INSTALLED_PACKAGES=${INSTALLED_PACKAGES%,}
+          echo "INSTALLED_PACKAGES=${INSTALLED_PACKAGES}" >> $GITHUB_ENV
         fi
         
         make defconfig
-        
-        rm -f ${TEMP_PREFIX}_available.txt ${TEMP_PREFIX}_missing.txt ${TEMP_PREFIX}_added.txt ${TEMP_PREFIX}_failed.txt 2>/dev/null || true
 
     - name: 编译固件
       run: |
