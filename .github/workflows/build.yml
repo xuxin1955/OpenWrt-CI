@@ -119,6 +119,16 @@ jobs:
         
         make defconfig
         
+        if ! grep -q "^CONFIG_PACKAGE_kmod-airoha-en7581-switch=y$" .config; then
+          echo "CONFIG_PACKAGE_kmod-airoha-en7581-switch=y" >> .config
+        fi
+        
+        if ! grep -q "^CONFIG_PACKAGE_kmod-phy-airoha=y$" .config; then
+          echo "CONFIG_PACKAGE_kmod-phy-airoha=y" >> .config
+        fi
+        
+        make defconfig
+        
         echo "=== 配置差异 (diffconfig) ==="
         ./scripts/diffconfig.sh
         
@@ -162,4 +172,3 @@ jobs:
         files: ${{ github.workspace }}/release_assets/*
         draft: false
         prerelease: false
-        overwrite_files: true
