@@ -34,9 +34,9 @@ on:
         default: 'nokia_xg-040g-md'
         type: string
       packages:
-        description: '定制软件（英文逗号分隔）'
+        description: '软件（英文逗号分隔）'
         required: false
-        default: 'luci-theme-argon,luci-app-diskman,luci-app-usb-printer,tailscale,luci,luci-app-wol,luci-app-pbr,luci-app-ttyd,luci-app-adblock'
+        default: 'luci-app-diskman,luci-app-usb-printer,luci-theme-argon,tailscale,luci-app-ksmbd,luci-app-v2raya,luci-app-pbr,luci-app-adblock,luci'
         type: string
 
 jobs:
@@ -119,16 +119,6 @@ jobs:
         
         make defconfig
         
-        if ! grep -q "^CONFIG_PACKAGE_kmod-airoha-en7581-switch=y$" .config; then
-          echo "CONFIG_PACKAGE_kmod-airoha-en7581-switch=y" >> .config
-        fi
-        
-        if ! grep -q "^CONFIG_PACKAGE_kmod-phy-airoha=y$" .config; then
-          echo "CONFIG_PACKAGE_kmod-phy-airoha=y" >> .config
-        fi
-        
-        make defconfig
-        
         echo "=== 配置差异 (diffconfig) ==="
         ./scripts/diffconfig.sh
         
@@ -168,7 +158,8 @@ jobs:
         body: |
           设备: ${{ env.PROFILE }}
           架构: ${{ env.TARGET }}/${{ env.SUBTARGET }}
-          定制软件: ${{ github.event.inputs.packages }}
+          软件: ${{ github.event.inputs.packages }}
         files: ${{ github.workspace }}/release_assets/*
         draft: false
         prerelease: false
+        overwrite_files: true
