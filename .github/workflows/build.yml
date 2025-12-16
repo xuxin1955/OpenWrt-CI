@@ -11,7 +11,7 @@ on:
       source_branch:
         description: '分支'
         required: true
-        default: 'main'
+        default: 'openwrt-25.10'
         type: string
       custom_feeds:
         description: '软件源（src-git luci https://github.com/openwrt/luci.git）'
