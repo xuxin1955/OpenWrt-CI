@@ -31,12 +31,12 @@ on:
       profile:
         description: '配置'
         required: true
-        default: 'nokia_xg-040g-md'
+        default: 'bell_xg-040g-md'
         type: string
       packages:
         description: '软件（英文逗号分隔）'
         required: false
-        default: 'luci-app-diskman,luci-app-usb-printer,luci-theme-argon,tailscale,luci-app-ksmbd,luci-app-v2raya,luci-app-pbr,luci-app-adblock,luci'
+        default: 'luci-app-diskman,luci-app-usb-printer,luci-theme-argon,luci-app-ksmbd,luci-app-v2raya,luci-app-pbr,tailscale,luci-app-adblock,luci'
         type: string
 
 jobs:
