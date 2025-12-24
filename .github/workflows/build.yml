@@ -36,7 +36,7 @@ on:
       packages:
         description: '软件（使用空格分隔）'
         required: false
-        default: 'luci-app-diskman luci-app-usb-printer luci-theme-argon luci-app-ksmbd luci-app-v2raya luci-app-pbr tailscale luci-app-adblock luci kmod-usb-storage kmod-fs-vfat kmod-fs-ext4 kmod-fs-exfat block-mount'
+        default: 'luci-app-diskman luci-app-usb-printer luci-theme-argon luci-app-ksmbd luci-app-v2raya luci-app-pbr tailscale luci-app-adblock luci kmod-usb-core kmod-usb2 kmod-usb3 usbutils kmod-usb-storage kmod-fs-vfat kmod-fs-ext4 kmod-fs-exfat block-mount'
         type: string
 
 jobs:
