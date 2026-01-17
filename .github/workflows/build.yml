@@ -36,7 +36,7 @@ on:
       packages:
         description: '软件（使用空格分隔）'
         required: false
-        default: 'luci-app-diskman luci-app-usb-printer luci-app-v2raya luci-app-ksmbd tailscale luci rtl8822ce-firmware kmod-rtw88-8822cu'
+        default: 'kmod-usb2 kmod-usb3 kmod-usb-net-rndis kmod-usb-net-huawei-cdc-ncm kmod-usb-net-cdc-ncm kmod-usb-net-cdc-ether kmod-usb-net kmod-usb-core luci-app-diskman luci-app-usb-printer luci-app-v2raya luci-app-ksmbd tailscale luci rtl8822ce-firmware kmod-rtw88-8822cu rtl8821ce-firmware kmod-rtw88-8821cu kmod-rtw88'
         type: string
 
 jobs:
